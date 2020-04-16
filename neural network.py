@@ -9,15 +9,18 @@ def d_sigmod(x):
 def delta_rule(target_output, actual_output, ith_input):
 	#ds = d_sigmod(actual_output)
 	#print(target_output, actual_output, actual_output - target_output, ds, ith_input)
-	return (target_output, actual_output) * d_sigmod(actual_output) * ith_input
+	return (actual_output - target_output) * d_sigmod(actual_output) * ith_input
 
 class Node:
 	def __init__(self, name = None):
-		self.name = name			
+		self.name = name	
+		self.oIdx = []				#save the index in target node
 		self.iw = []				#input weights
 		self.inputs = []			#input nodes
 		self.outputs = []			#output nodes
 		self.ov = 0					#output value: activation_function(weighted_sum + b)
+		self.dEdx = 0				#derivative error w.r.t. total inputs x
+		self.dEdy = 0				#derivative error w.r.t. output y
 		
 	def dot_iw_inputs(self):		#computes weighted_sum
 		lw = len(self.iw)
@@ -39,9 +42,19 @@ class Node:
 			print(self.outputs[i].name)
 			
 	def connect(self, tn, w):			#tn: target node, w: weight
+		lenTnIw = len(tn.iw)
 		tn.iw.append(w)
 		tn.inputs.append(self)
 		self.outputs.append(tn)
+		self.oIdx.append(lenTnIw)
+		
+	def dump_output(self):
+		lo = len(self.outputs)
+		for i in range(lo):
+			node = self.outputs[i]
+			idx = self.oIdx[i]
+			w = node.iw[idx]
+			print(node.name, w)
 		
 	def compute_error(self, tv):		#tv: target value
 		d = tv - self.ov
@@ -53,11 +66,33 @@ class Node:
 	def get_d_ith_weight(self, target_output, i):		
 		return delta_rule(target_output, self.ov, self.inputs[i].ov)
 		
-	def bp(self, target_output, i, learning_rate):			#backpropagation
+	def bp1(self, target_output, i, learning_rate):			#backpropagation
 		dw = self.get_d_ith_weight(target_output, i)
 		self.iw[i] -= learning_rate * dw
 		print("bp dump", self.name, i, self.iw[i])
 		
+	def bp(self, target_output, i, learning_rate):			#backpropagation
+		self.dEdy = self.ov - target_output
+		self.dEdx = self.dEdy * d_sigmod(self.ov)
+		self.iw[i] -= learning_rate * self.dEdx * self.inputs[i].ov
+		#print("bp dump", self.name, i, self.iw[i])
+		
+	def compute_dEdy(self):
+		#sum all errors come into this node(backward direction)
+		lo = len(self.outputs)
+		dEdy = 0
+		for i in range(lo) :
+			node = self.outputs[i]
+			idx = self.oIdx[i]
+			dEdy += node.iw[idx] * node.dEdx
+		return dEdy
+		
+	def bph(self, i, learning_rate):			#backpropagation for hidden layers
+		self.dEdy = self.compute_dEdy()
+		self.dEdx = self.dEdy * d_sigmod(self.ov)
+		self.iw[i] -= learning_rate * self.dEdx * self.inputs[i].ov
+		#print("bp dump", self.name, i, self.iw[i])		
+
 class Layer:
 	def __init__(self, name = None, initB = 0, prev = None, next = None):
 		self.prev = prev
