@@ -6,11 +6,11 @@ import numpy as np
 import random
 
 def sigmoid(x):
-	return x
+	#return math.tanh(x)
 	return 1/(1+math.exp(-x))
 	
 def d_sigmoid(x):
-	return 1
+	#return 1 - x*x
 	return x*(1-x)
 
 def delta_rule(target_output, actual_output, ith_input):
@@ -18,82 +18,7 @@ def delta_rule(target_output, actual_output, ith_input):
 	#print(target_output, actual_output, actual_output - target_output, ds, ith_input)
 	return (actual_output - target_output) * d_sigmoid(actual_output) * ith_input
 
-###############################################################################
-#LineFeatureLabel holds one feature and one label which are close to a line
-###############################################################################
-class LineFeatureLabel:
-	def __init__(self):
-		self.X = None			#feature
-		self.Y = None			#label
-		self.Side = None			
-
-	def dump(self):
-		print(self.X)
-		print(self.Y)
-
-	def get_random_point_along_line_2d(self, startPos, dir, t, noise, cross):
-		pos = vector2()
-		pos = startPos + dir * t
-		side = random.uniform(-1, 1)
-		pos += cross * side * noise		#TODO: this uniform() has problems???
-		return pos, side
-
-	def generate_line_set_2d(self, startPos, stopPos, n, noise):		
-		dir = stopPos - startPos
-		lenDir = dir.length()
-		step = lenDir / n
-		dir /= lenDir
-		cross = vector2(dir.y, -dir.x)
-		self.X = np.zeros(n)
-		self.Y = np.zeros(n)
-		self.Side = np.zeros(n)
-		pos = vector2()
-		for i in range(n):
-			pos = startPos + dir * i * step
-			pos, side = self.get_random_point_along_line_2d(startPos, dir, i * step, noise, cross)
-			self.X[i] = pos.x
-			self.Y[i] = pos.y
-			self.Side[i] = side
-
-def test():
-	global feature
-	feature = LineFeatureLabel()
-	feature.generate_line_set_2d(vector2(-1,0), vector2(1,0), 10, 0.01)
-	print(feature.X, feature.Y)
-
 	
-###############################################################################
-#LineFeatureLabel holds 2 features and one label which are close to a line
-#because it's for test only, so...
-###############################################################################
-class LineFeatureLabel2:
-	def __init__(self, p0, p1, n, noise):
-		self.Y = np.zeros(n)	#label
-
-		self.p0 = p0
-		self.p1 = p1
-
-		lfa = LineFeatureLabel()
-		dir1 = p1 - p0
-		lfa.generate_line_set_2d(p0, p1, n, noise)
-
-		#TODO: make this random
-		for i in range(n):
-			self.Y[i] = lfa.Side[i]
-
-		self.X1 = lfa.X
-		self.X2 = lfa.Y
-
-	def dump(self):
-		ly = len(self.Y)
-		for i in range(ly):
-			print(self.X1[i], self.X2[i], self.Y[i])
-
-
-def test():
-	global feature
-	feature = LineFeatureLabel2(vector2(-1,0), vector2(1,0), 20, 0.1)
-	feature.dump()
 
 ###############################################################################
 ##						neural network node
@@ -101,17 +26,41 @@ def test():
 class Node:
 	def __init__(self, name = None):
 		self.name = name	
-		self.oIdx = []				#save the index in target node
+		self.oIdx = []				#index of current node in the target node's input nodes
 		self.iw = []				#input weights
 		self.inputs = []			#input nodes
 		self.outputs = []			#output nodes
 		self.ov = 0					#output value: activation_function(weighted_sum + b)
-		self.dEdx = 0				#derivative error w.r.t. total inputs x
-		self.dEdy = 0				#derivative error w.r.t. output y
+		self.dEdx = 0				#error derivative w.r.t. total inputs x
+		self.dEdy = 0				#error derivative w.r.t. output y
+		self.bias = 0
 
 	def reset(self):
+		lw = len(self.iw)
+		r = math.sqrt(6/lw)
+		for i in range(lw):
+			self.iw[i] = r * np.random.normal(1, 0.2)		#loc: 1, deviation: 0.2
+			if random.uniform(-1, 1) > 0 :
+				self.iw[i] *= -1
+			
+		self.bias = 0
+
+	def getFormula(self):
+		text = ""
+		i = 0
+		lw = len(self.iw)
+		txt = "{:.5f}"
 		for w in self.iw:
-			w = 0
+			text += txt.format(w)
+			text += "x"
+			text += str(i)
+			i = i + 1
+			if i != lw :
+				text += " + "
+
+		text += " + "
+		text += txt.format(self.bias)
+		return text
 		
 	def dot_iw_inputs(self):		#computes weighted_sum
 		lw = len(self.iw)
@@ -132,7 +81,7 @@ class Node:
 		for i in range(lo):
 			print(self.outputs[i].name)
 			
-	def connect(self, tn, w):			#tn: target node, w: weight
+	def connect(self, tn, w = 0):			#tn: target node, w: weight
 		lenTnIw = len(tn.iw)
 		tn.iw.append(w)
 		tn.inputs.append(self)
@@ -151,8 +100,8 @@ class Node:
 		d = tv - self.ov
 		return 0.5 * d * d 
 			
-	def fp(self, b):		#forward propagation, b: bias
-		self.ov = sigmoid(self.dot_iw_inputs() + b)
+	def fp(self):		#forward propagation
+		self.ov = sigmoid(self.dot_iw_inputs() + self.bias)
 		
 	def get_d_ith_weight(self, target_output, i):		
 		return delta_rule(target_output, self.ov, self.inputs[i].ov)
@@ -162,7 +111,7 @@ class Node:
 		self.iw[i] -= learning_rate * dw
 		#print("bp dump", self.name, i, self.iw[i])
 
-	def bp(self, target_output, learning_rate):			#backpropagation
+	def bp(self, target_output, learning_rate):			#backpropagation, target_output is example
 		self.dEdy = self.ov - target_output
 		self.dEdx = self.dEdy * d_sigmoid(self.ov)
 		tmp = learning_rate * self.dEdx
@@ -170,6 +119,8 @@ class Node:
 		#old = self.iw[0]
 		for i in range(lenw):
 			self.iw[i] -= tmp * self.inputs[i].ov
+
+		self.bias -= tmp
 		#print(old, "-->", self.iw[0])
 		
 	def compute_dEdy(self):
@@ -189,7 +140,9 @@ class Node:
 		lenw = len(self.iw)
 		for i in range(lenw):
 			self.iw[i] -= tmp * self.inputs[i].ov
-		#print("bp dump", self.name, i, self.iw[i])		
+
+		self.bias -= tmp
+		#print("bp dump", self.name, self.bias)		
 
 ###############################################################################
 ##						neural network
@@ -200,6 +153,14 @@ class NNetwork:
 		self.first_layer = None
 		self.last_layer = None
 		self.epochs = epochs
+		self.logInterval = 0
+		self.logFirst20 = False
+
+	def reset(self):
+		layer = self.first_layer.next
+		while layer:
+			layer.reset()
+			layer = layer.next
 
 	def set_first_layer(self, first_layer):
 		self.first_layer = first_layer
@@ -219,10 +180,21 @@ class NNetwork:
 			layer.fp()
 			layer = layer.next
 
+		#print(self.first_layer.nodes[0].ov, self.first_layer.nodes[1].ov, "--->", self.last_layer.nodes[0].ov)
+
 		return self.last_layer.nodes[0].ov
+
+	def dump_formula(self):
+		layer = self.first_layer.next
+		while layer:
+			layer.dump_formula()
+			layer = layer.next
+		print("\n")
 
 	def train(self, *args):		#args: first is label, features rest
 		argCount = len(args)
+
+		li = 0
 	
 		nExamples = len(args[0])
 
@@ -232,7 +204,6 @@ class NNetwork:
 			iexample = random.randrange(nExamples)
 
 			#init layer0		#TODO move the function here to avoid packing/unpacking
-			#print("init layer0")
 			self.first_layer.initLayerForTrain(iexample, *args)	
 
 			#forward propagation
@@ -241,8 +212,8 @@ class NNetwork:
 				layer.fp()
 				layer = layer.next
 			
-			#print(self.first_layer.nodes[0].ov)
-			#print(self.last_layer.nodes[0].ov)
+			#first value should always be 0.5, if sigmoid is the activation function
+			#print(layer0.nodes[0].ov, layer0.nodes[1].ov, "-fp->", self.last_layer.nodes[0].ov, "example:", args[0][iexample])
 
 			#backward propagation
 			layer = self.last_layer
@@ -254,29 +225,55 @@ class NNetwork:
 				layer.bph()
 				layer = layer.prev
 
-			#print(self.first_layer.nodes[0].ov, self.last_layer.nodes[0].ov, args[0][iexample], self.last_layer.nodes[0].iw)
+			if self.logInterval > 0:
+				li += 1
+				if self.logFirst20:
+					self.dump_formula()	
+					if li > 20:
+						self.logFirst20 = False
+				else:
+					if li > self.logInterval :
+						li = 0
+						self.dump_formula()			#this can be used to observe convergency
 
 
 ###############################################################################
 ##						neural network layer
 ###############################################################################
 class Layer:
-	def __init__(self, nnetwork = None, name = None, initB = 0, prev = None, next = None):
-		self.prev = prev
-		self.next = next
-		self.name = name
-		self.nodes = []
-		self.b = initB
+	def __init__(self, nnetwork, layerName, autoName, nNodes):
+		self.prev = None
+		self.next = None
 		self.nnetwork = nnetwork
+		self.nodes = []
+		self.name = layerName
+
+		if nNodes > 0:
+			self.newNodes(nNodes)
+
+		if autoName:
+			self.autoNameNodes()
+				
+	def dump_formula(self):
+		for node in self.nodes:
+			print(node.getFormula())
+						
+	def connectAllNodes(self, nextLayer):
+		for n1 in self.nodes :
+			for n2 in nextLayer.nodes:
+				n1.connect(n2)
+					
+	def connect(self, nextLayer, autoConnectNodes = None):
+		self.next = nextLayer
+		nextLayer.prev = self
 		
-	def connect(self, layer):
-		self.next = layer
-		layer.prev = self
+		if autoConnectNodes:
+			self.connectAllNodes(nextLayer)
 		
 	def fp(self):			#forward propagation	
 		lenNodes = len(self.nodes)	
 		for n in self.nodes:
-			n.fp(self.prev.b)
+			n.fp()
 			
 	def bp(self, target_output):			#backpropagation
 		lenNodes = len(self.nodes)	
@@ -290,7 +287,7 @@ class Layer:
 			
 	def dump(self):
 		lenNodes = len(self.nodes)
-		print("Layer name =", self.name, "total nodes = ", lenNodes, "b = ", self.b)
+		print("Layer name =", self.name, "total nodes = ", lenNodes)
 		for n in self.nodes:
 			n.dump()
 	
@@ -298,6 +295,11 @@ class Layer:
 		for i in range(n):
 			self.nodes.append(Node())
 
+	def autoNameNodes(self):
+		ln = len(self.nodes)
+		for i in range(ln):
+			self.nodes[i].name = self.name + "_node" + str(i)
+		
 	def reset(self):
 		for node in self.nodes:
 			node.reset()
@@ -315,26 +317,5 @@ class Layer:
 			#print(self.nodes[inode].ov)
 
 
-#plot_sigmoid is an idea
-def plot_sigmoid(x0, x1, n, m, b) :
-	step = (x1-x0)/n
-	X = np.zeros(n)
-	Y = np.zeros(n)
-	for i in range(n):
-		X[i] = x0 + i * step
-		Y[i] = sigmoid( X[i] * m + b)
-
-	plt.axis([-0.1, 1, -1, 1])
-	plt.plot(X, Y)		#x,y both list []
-	plt.show()
-
-plot_sigmoid(0, 1, 20, 0.707, 0)
-
-
-#x axis is inferred from listX
-def scatter_2d(x0, x1, y0, y1, listX, listY):
-	plt.axis([x0, x1, y0, y1])
-	plt.scatter(listX, listY)		#x,y both list []
-	plt.show()
 
 
