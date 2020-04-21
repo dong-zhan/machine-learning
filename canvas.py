@@ -115,16 +115,3 @@ def test():
     c.plot()
 
 
-
-###################### vectorize #############################
-def myfunc(a, b):
-    "Return a-b if a>b, otherwise return a+b"
-    if a > b:
-        return a - b
-    else:
-        return a + b
-
-def vectorize():
-    vfunc = np.vectorize(myfunc)
-    arr = vfunc([1, 2, 3, 4], 2)
-    print(arr)
