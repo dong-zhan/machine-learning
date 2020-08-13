@@ -1,3 +1,19 @@
+def sum_layer(layer):
+	print("len weights(this incudes b):", len(layer.weights))
+	print("bp adjust weights:", layer.weights[0].numpy()[0], "b", layer.weights[1].numpy()[0])
+	#print("len trainable_weights:", len(layer.trainable_weights))
+	print("fp adjust type(output):", type(layer.output))
+	
+	#output = keras_function([training_data, 1])
+	#print(output)
+	
+def get_value(v):
+	i = np.array([v])
+	print(func(i))
+	print(model(i))
+	print(model.predict(i))	
+	
+
 def create_nw():
 	from keras.optimizers import SGD
 
